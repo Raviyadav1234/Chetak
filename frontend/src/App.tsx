@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import './App.css';
@@ -20,6 +20,14 @@ interface Product {
 
 function ProductList() {
   const queryClient = useQueryClient();
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Fetch a mock sanctum token for the test user
+    axios.get('http://localhost:8000/api/mock-login')
+      .then(res => setToken(res.data.token))
+      .catch(console.error);
+  }, []);
 
   const { data: products, isLoading, isError } = useQuery<Product[]>({
     queryKey: ['products'],
@@ -31,7 +39,11 @@ function ProductList() {
 
   const bookMutation = useMutation({
     mutationFn: async ({ id, quantity }: { id: number; quantity: number }) => {
-      const { data } = await api.post(`/products/${id}/book`, { quantity });
+      const { data } = await api.post(`/products/${id}/book`, { quantity }, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       return data;
     },
     onMutate: async (newBooking) => {
@@ -51,7 +63,7 @@ function ProductList() {
     },
     onError: (err, newBooking, context) => {
       queryClient.setQueryData(['products'], context?.previousProducts);
-      alert('Booking failed! ' + (err as any).response?.data?.message || err.message);
+      alert('Booking failed! ' + ((err as any).response?.data?.message || err.message));
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
@@ -63,18 +75,21 @@ function ProductList() {
 
   return (
     <div className="product-container">
-      <h1>Products</h1>
+      <div className="header">
+        <h1>Booking System</h1>
+        {token ? <span className="badge success">Authenticated</span> : <span className="badge warning">Authenticating...</span>}
+      </div>
       <div className="product-list">
         {products?.map((product) => (
           <div key={product.id} className="product-card">
             <h2>{product.name}</h2>
-            <p>Stock: {product.stock}</p>
+            <p>Stock: <span className="stock-count">{product.stock}</span></p>
             <button 
               onClick={() => bookMutation.mutate({ id: product.id, quantity: 1 })}
-              disabled={product.stock <= 0 || bookMutation.isPending}
+              disabled={product.stock <= 0 || bookMutation.isPending || !token}
               className="book-btn"
             >
-              {bookMutation.isPending ? 'Booking...' : 'Book 1 Unit'}
+              {bookMutation.isPending ? 'Booking...' : (product.stock <= 0 ? 'Out of Stock' : 'Book 1 Unit')}
             </button>
           </div>
         ))}

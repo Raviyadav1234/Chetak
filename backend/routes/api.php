@@ -1,9 +1,16 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-
 use App\Http\Controllers\Api\ProductController;
+use App\Models\User;
+
+Route::get('/mock-login', function () {
+    $user = User::firstOrCreate(
+        ['email' => 'test@example.com'],
+        ['name' => 'Test User', 'password' => bcrypt('password')]
+    );
+    $token = $user->createToken('test-token')->plainTextToken;
+    return response()->json(['token' => $token]);
+});
 
 Route::get('/user', function (Request $request) {
     return $request->user();
