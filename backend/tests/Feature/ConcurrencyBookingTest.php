@@ -8,10 +8,8 @@ use Tests\TestCase;
 
 use App\Models\Product;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
-use Tests\TestCase;
 
 class ConcurrencyBookingTest extends TestCase
 {
