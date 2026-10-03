@@ -1,122 +1,97 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import React from 'react';
+import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
+import './App.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+const queryClient = new QueryClient();
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+const api = axios.create({
+  baseURL: 'http://localhost:8000/api/v1',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+interface Product {
+  id: number;
+  name: string;
+  stock: number;
 }
 
-export default App
+function ProductList() {
+  const queryClient = useQueryClient();
+
+  const { data: products, isLoading, isError } = useQuery<Product[]>({
+    queryKey: ['products'],
+    queryFn: async () => {
+      const { data } = await api.get('/products');
+      return data.data;
+    },
+  });
+
+  const bookMutation = useMutation({
+    mutationFn: async ({ id, quantity }: { id: number; quantity: number }) => {
+      const { data } = await api.post(`/products/${id}/book`, { quantity });
+      return data;
+    },
+    onMutate: async (newBooking) => {
+      await queryClient.cancelQueries({ queryKey: ['products'] });
+      const previousProducts = queryClient.getQueryData<Product[]>(['products']);
+      
+      queryClient.setQueryData<Product[]>(['products'], (old) => {
+        if (!old) return old;
+        return old.map(p => 
+          p.id === newBooking.id 
+            ? { ...p, stock: p.stock - newBooking.quantity }
+            : p
+        );
+      });
+
+      return { previousProducts };
+    },
+    onError: (err, newBooking, context) => {
+      queryClient.setQueryData(['products'], context?.previousProducts);
+      alert('Booking failed! ' + (err as any).response?.data?.message || err.message);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+
+  if (isLoading) return <div className="loading">Loading products...</div>;
+  if (isError) return <div className="error">Failed to load products.</div>;
+
+  return (
+    <div className="product-container">
+      <h1>Products</h1>
+      <div className="product-list">
+        {products?.map((product) => (
+          <div key={product.id} className="product-card">
+            <h2>{product.name}</h2>
+            <p>Stock: {product.stock}</p>
+            <button 
+              onClick={() => bookMutation.mutate({ id: product.id, quantity: 1 })}
+              disabled={product.stock <= 0 || bookMutation.isPending}
+              className="book-btn"
+            >
+              {bookMutation.isPending ? 'Booking...' : 'Book 1 Unit'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <div className="app-main">
+        <ProductList />
+      </div>
+    </QueryClientProvider>
+  );
+}
+
+export default App;
+
